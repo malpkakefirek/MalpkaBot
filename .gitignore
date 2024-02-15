@@ -1,0 +1,6 @@
+.*
+!.gitignore
+db copy.json
+malpkabot.db
+ets
+__pycache__/

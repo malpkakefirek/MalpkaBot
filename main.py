@@ -4,12 +4,11 @@ from discord.ext import commands
 import requests
 import json
 import random
-from replit import db
-from keep_alive import keep_alive
-from time import sleep
+import aiosqlite
 from dotenv import load_dotenv
-import backoff
-import asyncio
+from asyncio import sleep, run
+from handle_database import select_value, update_value
+from initialize_database import initialize_database
 
 # import tracemalloc
 # tracemalloc.start()
@@ -17,19 +16,17 @@ import asyncio
 # -----------START UP------------ #
 
 intents = discord.Intents.all()
-
 print(discord.__version__)
 
 load_dotenv()
-
-# GRAB THE API TOKEN FROM THE .ENV FILE.
-DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
-hunt_code = os.getenv("hunt_code")
+DISCORD_TOKEN = os.environ["DISCORD_TOKEN"]
+hunt_code = os.environ["hunt_code"]
 
 bot = commands.Bot(command_prefix="@ ", intents=intents)
 
 invitations = dict()
 
+initialize_database()
 
 @bot.event
 async def on_ready():
@@ -43,22 +40,6 @@ async def on_ready():
 
     custom_activity = discord.Activity(type=2, name="@ help")
     await bot.change_presence(activity=custom_activity)
-
-    #print(db["756952326782058616"])
-    # print(db["activity_blacklist"])
-    matches = db.prefix("")
-    print(matches)
-
-
-# if can't read database, try again
-@backoff.on_exception(backoff.expo,
-                      requests.exceptions.RequestException,
-                      max_time=20)
-def get_database(url):
-    database = db[url]
-    print(database)
-    print(type(database))
-    return database
 
 
 # -----------PHRASES---------- #
@@ -176,22 +157,24 @@ def get_pie_chart(printable):
 
 
 async def send_activity_chart(ctx, mode):
-    n = 0
-    if mode == "all":
-        value = db[str(ctx.guild.id)]
-    elif mode == "channel":
-        value = db["activity"]
-        if not ctx.message.channel_mentions[0].id:
-            channel_id = str(ctx.message.channel.id)
-        else:
-            channel_id = str(ctx.message.channel_mentions[0].id)
+    async with aiosqlite.connect('malpkabot.db') as conn:
+        async with conn.cursor() as cursor:
+            if mode == "all":
+                user_activity = await select_value(cursor, 'user_activity')
+                value = user_activity[str(ctx.guild.id)]
+            elif mode == "channel":
+                channel_activity = await select_value(cursor, 'channel_activity')
+                if not ctx.message.channel_mentions[0].id:
+                    channel_id = str(ctx.message.channel.id)
+                else:
+                    channel_id = str(ctx.message.channel_mentions[0].id)
 
-        if channel_id not in value[str(ctx.guild.id)]:
-            await ctx.channel.send(
-                f"Nikt nie pisał na kanale {ctx.message.channel_mentions[0].mention}"
-            )
-            return
-        value = value[str(ctx.guild.id)][channel_id]
+                if channel_id not in channel_activity[str(ctx.guild.id)]:
+                    await ctx.channel.send(
+                        f"Nikt nie pisał na kanale {ctx.message.channel_mentions[0].mention}"
+                    )
+                    return
+                value = channel_activity[str(ctx.guild.id)][channel_id]
 
     # sort members by activity
     sorted_dict = dict()
@@ -206,6 +189,7 @@ async def send_activity_chart(ctx, mode):
     all_msgs = sum(sorted_dict.values())
 
     # change all activity points to percentage (only for printing)
+    n = 0
     for user_key in sorted_dict:
         if n < 9 and user_key:
             print(int(user_key))
@@ -232,9 +216,11 @@ async def send_activity_chart(ctx, mode):
 
 
 # encourage someone if the "someone" is nice
-def encourage(message):
-    if message.author.id == 697503922201296956 and get_database(
-            "forgave") == False:
+async def encourage(message):
+    async with aiosqlite.connect('malpkabot.db') as conn:
+        async with conn.cursor() as cursor:
+            forgave = await select_value(cursor, 'forgave')
+    if message.author.id == 697503922201296956 and not forgave:
         return message.channel.send(":)")
     else:
         return message.channel.send(random.choice(encouragements))
@@ -245,63 +231,68 @@ def encourage(message):
 
 @bot.event
 async def on_member_join(member):
-    sleep(1)
-    value = get_database("invites")
+    async with aiosqlite.connect('malpkabot.db') as conn:
+        async with conn.cursor() as cursor:
+            await cursor.execute("BEGIN TRANSACTION")
+            invites = await select_value(cursor, 'invites')
 
-    # if the guild never had any invites
-    if str(member.guild.id) not in value:
-        value[str(member.guild.id)] = dict()
-        print("assigned guild to invites dict")
+            # if the guild never had any invites
+            if str(member.guild.id) not in invites:
+                invites[str(member.guild.id)] = dict()
+                print("assigned guild to invites dict")
 
-    sleep(1)
-    db["invites"] = value
+            await update_value(cursor, 'invites', invites)
+            await conn.commit()
 
-    # get invites' uses before join
-    invites_before_join = invitations[str(member.guild.id)]
+            # get invites' uses before join
+            invites_before_join = invitations[str(member.guild.id)]
 
-    # setup the num of invites for the guild (and later the inviter)
-    inviter_uses = db['inviter_uses']
-    if str(member.guild.id) not in inviter_uses:
-        inviter_uses[str(member.guild.id)] = dict()
-    inviter_uses_guild = inviter_uses[str(member.guild.id)]
+            # setup the num of invites for the guild (and later the inviter)
+            await cursor.execute("BEGIN TRANSACTION")
+            inviter_uses = await select_value(cursor, 'inviter_uses')
+            if str(member.guild.id) not in inviter_uses:
+                inviter_uses[str(member.guild.id)] = dict()
+            inviter_uses_guild = inviter_uses[str(member.guild.id)]
 
-    inv_channel = db['inv_channel']
-    inv_channel = member.guild.get_channel(inv_channel[str(member.guild.id)])
+            inv_channel = await select_value(cursor, 'inv_channel')
+            inv_channel = member.guild.get_channel(inv_channel[str(member.guild.id)])
 
-    # disabled because the admin didn't want it:
-    # /-----------------------\
-    # create dm channel with person who joined, if not already created
-    # if not member.dm_channel:
-    #   await member.create_dm()
-    #   print(f"Created a DM channel with \"{member.name}\"")
+            # disabled because the admin didn't want it:
+            # /-----------------------\
+            # create dm channel with person who joined, if not already created
+            # if not member.dm_channel:
+            #   await member.create_dm()
+            #   print(f"Created a DM channel with \"{member.name}\"")
 
-    # send welcoming message if dm is possible
-    # try:
-    #   await member.dm_channel.send(f"Witamy w \"{member.guild.name}\"! Przeczytaj dokładnie regulamin, aby nie wpaść w kłopoty z niewiedzy. Jeżeli masz jakieś pytania lub ważną sprawę, możesz napisać do <@336475402535174154> na pw, lub napisać na kanale \"sprawa-do-administracji\". Baw się dobrze!")
-    # except discord.Forbidden:
-    #   print(discord.Forbidden)
-    # \-----------------------/
+            # send welcoming message if dm is possible
+            # try:
+            #   await member.dm_channel.send(f"Witamy w \"{member.guild.name}\"! Przeczytaj dokładnie regulamin, aby nie wpaść w kłopoty z niewiedzy. Jeżeli masz jakieś pytania lub ważną sprawę, możesz napisać do <@336475402535174154> na pw, lub napisać na kanale \"sprawa-do-administracji\". Baw się dobrze!")
+            # except discord.Forbidden:
+            #   print(discord.Forbidden)
+            # \-----------------------/
 
-    # fetch invites after join
-    invites_after_join = await member.guild.invites()
+            # fetch invites after join
+            invites_after_join = await member.guild.invites()
 
-    # fetch my profile
-    malpka = await member.guild.fetch_member(336475402535174154)
+            # fetch my profile
+            malpka = await member.guild.fetch_member(336475402535174154)
 
-    # find the used invite
-    for inv in invites_before_join:
-        sleep(0.5)
-        inv_old = find_invite_by_code(invites_after_join, inv.code)
+            # find the used invite
+            for inv in invites_before_join:
+                inv_old = find_invite_by_code(invites_after_join, inv.code)
 
-        if inv_old:
-            if inv.uses < inv_old.uses:
+                if not inv_old or inv.uses >= inv_old.uses:
+                    continue
+
                 print("Old invite used")
-
                 # attach an invite to member id
-                value = db["invites"]
-                value[str(member.guild.id)][str(
-                    member.id)] = [inv.code, inv.inviter.name, inv.inviter.id]
-                db["invites"] = value
+                invites = await select_value(cursor, 'invites')
+                invites[str(member.guild.id)][str(member.id)] = [
+                    inv.code,
+                    inv.inviter.name,
+                    inv.inviter.id
+                ]
+                await update_value(cursor, 'invites', invites)
 
                 # update invites' num of uses
                 invitations[str(member.guild.id)] = invites_after_join
@@ -311,57 +302,66 @@ async def on_member_join(member):
                 inviter_uses_guild[str(inv.inviter.id)] += 1
 
                 # send message on the inv channel about invite
-                await inv_channel.send(
-                    f"Użytkownik {member.mention} został zaproszony kodem `{inv.code}` przez użytkownika `{inv.inviter}`. Użytkownik `{inv.inviter.name}` zaprosił już `{inviter_uses_guild[str(inv.inviter.id)]}` osób"
-                )
+                await inv_channel.send(f"\
+                    Użytkownik {member.mention} został zaproszony kodem `{inv.code}` przez użytkownika `{inv.inviter}`. \
+                    Użytkownik `{inv.inviter.name}` zaprosił już `{inviter_uses_guild[str(inv.inviter.id)]}` osób\
+                ")
 
                 # send me dm about the invite
                 await malpka.create_dm()
-                await malpka.dm_channel.send(
-                    f"Old invite used for `{member.name}` with `{inv.code}` by `{inv.inviter}`. It's their invitation number {inviter_uses_guild[str(inv.inviter.id)]}"
-                )
+                await malpka.dm_channel.send(f"\
+                    Old invite used for `{member.name}` with `{inv.code}` by `{inv.inviter}`. \
+                    It's their invitation number {inviter_uses_guild[str(inv.inviter.id)]}\
+                ")
                 break
-    else:
-        print("Not old")
+            else:
+                print("Not old")
 
-        for inv in invites_after_join:
-            if inv not in invites_before_join and inv.uses > 0:
-                print("New invite used")
+                for inv in invites_after_join:
+                    if inv in invites_before_join or inv.uses <= 0:
+                        continue
 
-                # attach an invite to member id
-                value = db["invites"]
-                value[str(member.guild.id)][str(
-                    member.id)] = [inv.code, inv.inviter.name, inv.inviter.id]
-                db["invites"] = value
+                    print("New invite used")
 
-                # update invites' num of uses
-                invitations[str(member.guild.id)] = invites_after_join
+                    # attach an invite to member id
+                    invites = await select_value(cursor, 'invites')
+                    invites[str(member.guild.id)][str(member.id)] = [
+                        inv.code,
+                        inv.inviter.name,
+                        inv.inviter.id
+                    ]
+                    await update_value(cursor, 'invites', invites)
 
-                if str(inv.inviter.id) not in inviter_uses_guild:
-                    inviter_uses_guild[str(inv.inviter.id)] = 0
-                inviter_uses_guild[str(inv.inviter.id)] += 1
+                    # update invites' num of uses
+                    invitations[str(member.guild.id)] = invites_after_join
 
-                # send message on the inv channel about invite
-                await inv_channel.send(
-                    f"Użytkownik {member.mention} został zaproszony kodem `{inv.code}` przez użytkownika `{inv.inviter}`. Użytkownik `{inv.inviter.name}` zaprosił już `{inviter_uses_guild[str(inv.inviter.id)]}` osób"
-                )
+                    if str(inv.inviter.id) not in inviter_uses_guild:
+                        inviter_uses_guild[str(inv.inviter.id)] = 0
+                    inviter_uses_guild[str(inv.inviter.id)] += 1
 
-                # send me dm about the invite
-                await malpka.create_dm()
-                await malpka.dm_channel.send(
-                    f"New invite used for `{member.name}` with `{inv.code}` by `{inv.inviter}`. It's their invitation number {inviter_uses_guild[str(inv.inviter.id)]}"
-                )
-                break
-        else:
-            print("Not new. Propably invite was one use")
+                    # send message on the inv channel about invite
+                    await inv_channel.send(
+                        f"Użytkownik {member.mention} został zaproszony kodem `{inv.code}` przez użytkownika `{inv.inviter}`. Użytkownik `{inv.inviter.name}` zaprosił już `{inviter_uses_guild[str(inv.inviter.id)]}` osób"
+                    )
 
-            # send message on the inv channel about invite
-            await inv_channel.send(
-                f"Użytkownik {member.mention} został zaproszony zaproszeniem jednorazowym. Więcej info znajdziesz na \"audit log\""
-            )
+                    # send me dm about the invite
+                    await malpka.create_dm()
+                    await malpka.dm_channel.send(
+                        f"New invite used for `{member.name}` with `{inv.code}` by `{inv.inviter}`. It's their invitation number {inviter_uses_guild[str(inv.inviter.id)]}"
+                    )
+                    break
+                else:
+                    print("Not new. Propably invite was single use")
 
-    inviter_uses[str(member.guild.id)] = inviter_uses_guild
-    db['inviter_uses'] = inviter_uses
+                    # send message on the inv channel about invite
+                    await inv_channel.send(f"\
+                        Użytkownik {member.mention} został zaproszony zaproszeniem jednorazowym. \
+                        Więcej info znajdziesz na \"audit log\"\
+                    ")
+
+            inviter_uses[str(member.guild.id)] = inviter_uses_guild
+            await update_value(cursor, 'inviter_uses', inviter_uses)
+            await conn.commit()
 
 
 # ------------ ON MEMBER UPDATE ------------ #
@@ -369,7 +369,6 @@ async def on_member_join(member):
 
 @bot.event
 async def on_member_update(before, after):
-
     if after.id == 833425660533014528 and after.status == discord.Status.offline and before.status != discord.Status.offline:
         await bot.get_user(336475402535174154).send("Mech bot is offline!")
 
@@ -384,9 +383,8 @@ async def on_member_update(before, after):
             while str(new_nick)[0] in banned_nicks:
                 if len(new_nick) <= 1:
                     new_nick = after.name
-                    break
+                    return
                 new_nick = "".join(new_nick[1:])
-                await asyncio.sleep(0.1)
             print(f"to \"{new_nick}\"")
             await after.edit(nick=new_nick)
 
@@ -398,9 +396,8 @@ async def on_member_update(before, after):
             while str(new_nick)[0] in banned_nicks:
                 if len(new_nick) <= 1:
                     new_nick = "szma...ragd"
-                    break
+                    return
                 new_nick = "".join(new_nick[1:])
-                await asyncio.sleep(0.1)
             print(f"to \"{new_nick}\"")
             await after.edit(nick=new_nick)
 
@@ -416,77 +413,78 @@ async def on_message(message):
         return
 
     if message.guild:
-        user_id = str(message.author.id)
-        channel_id = str(message.channel.id)
-        server_id = str(message.guild.id)
+        async with aiosqlite.connect('malpkabot.db') as conn:
+            async with conn.cursor() as cursor:
+                user_id = str(message.author.id)
+                channel_id = str(message.channel.id)
+                server_id = str(message.guild.id)
 
-        # create empty dict of activity if guild is new
-        if server_id not in db.keys():
-            db[server_id] = dict()
-            print(
-                f"Appended an empty dictionary for {server_id}  {message.guild.name}) to the database"
-            )
+                await cursor.execute("BEGIN TRANSACTION")
+                user_activity = await select_value(cursor, 'user_activity')
+                channel_activity = await select_value(cursor, 'channel_activity')
+                blacklist = await select_value(cursor, 'activity_blacklist')
 
-        # new way of saving activity data
-        activity = db['activity']
-        blacklist = db['activity_blacklist']
+                # create empty dict of user_activity if guild is new
+                if server_id not in user_activity:
+                    user_activity[server_id] = dict()
+                    print(
+                        f"Appended an empty dictionary for {server_id}  {message.guild.name}) to the database"
+                    )
 
-        # == PER CHANNEL ACTIVITY == #
+                # == PER CHANNEL ACTIVITY == #
 
-        # new guild
-        if server_id not in activity:
-            activity[server_id] = dict()
-            print(
-                f"Appended an empty dict for {server_id} ({message.guild.name}) to activity database"
-            )
+                # new guild
+                if server_id not in channel_activity:
+                    channel_activity[server_id] = dict()
+                    print(
+                        f"Appended an empty dict for {server_id} ({message.guild.name}) to channel_activity database"
+                    )
 
-        # new channel
-        if channel_id not in activity[server_id]:
-            activity[server_id][channel_id] = dict()
-            print(
-                f"Appended an empty dict for {channel_id} ({message.channel.name} in {message.guild.name}) to activity database"
-            )
+                # new channel
+                if channel_id not in channel_activity[server_id]:
+                    channel_activity[server_id][channel_id] = dict()
+                    print(
+                        f"Appended an empty dict for {channel_id} ({message.channel.name} in {message.guild.name}) to channel_activity database"
+                    )
 
-        # new member
-        if user_id not in activity[server_id][channel_id]:
-            activity[server_id][channel_id][user_id] = 1
-            print(
-                f"First message for user {user_id} ({message.author.name}) in channel \"{message.channel.name}\" in guild \"{message.guild.name}\""
-            )
+                # add per channel channel_activity point
+                if user_id not in channel_activity[server_id][channel_id]:  # if new member
+                    channel_activity[server_id][channel_id][user_id] = 1
+                    print(f"\
+                        First message for user {user_id} ({message.author.name}) \
+                        in channel \"{message.channel.name}\" \
+                        in guild \"{message.guild.name}\"\
+                    ")
+                else:
+                    channel_activity[server_id][channel_id][user_id] += 1
+                    print("added per channel channel_activity point")
 
-        # add per channel activity point
-        else:
-            activity[server_id][channel_id][user_id] += 1
-            print("added per channel activity point")
+                await update_value(cursor, 'channel_activity', channel_activity)
 
-        db['activity'] = activity
+                # make a blacklist for new guild
+                if server_id not in blacklist:
+                    blacklist[server_id] = list()
+                    print(f"Added new blacklist to guild \"{message.guild.name}\"")
+                    await update_value(cursor, "activity_blacklist", blacklist)
 
-        # make a blacklist for new guild
-        if server_id not in blacklist:
-            blacklist[server_id] = list()
-            print(f"Added new blacklist to guild \"{message.guild.name}\"")
-            db["activity_blacklist"] = blacklist
+                # == USER ACTIVITY == #
 
-        # == OVERALL ACTIVITY == #
-
-        # if a member wrote a msg in whitelisted channel, add 1 activity point to that member
-        if channel_id not in blacklist[server_id]:
-            # if it's not member's first msg
-            if user_id in db[server_id]:
-                value = db[server_id]
-                value[user_id] += 1
-                db[server_id] = value
-                print(
-                    f"Added 1 to {message.author.name} in {message.guild.name}. Now {db[server_id][user_id]}"
-                )
-
-            else:
-                value = db[server_id]
-                value[user_id] = 1
-                db[server_id] = value
-                print(
-                    f"added user <@{user_id}> ({message.author.name}) to {message.guild.name}'s database"
-                )
+                # if a member wrote a msg in whitelisted channel, add 1 activity point to that member
+                if channel_id not in blacklist[server_id]:
+                    # if it's not member's first msg
+                    if user_id in user_activity[server_id]:
+                        user_activity[server_id][user_id] += 1
+                        print(
+                            f"Added 1 to {message.author.name} in {message.guild.name}. Now {user_activity[server_id][user_id]}"
+                        )
+                    else:
+                        user_activity[server_id][user_id] = 1
+                        print(
+                            f"Added user <@{user_id}> ({message.author.name}) to {message.guild.name}'s database"
+                        )
+                
+                await update_value(cursor, 'user_activity', user_activity)
+                await conn.commit()
 
     msg = message.content
 
@@ -525,7 +523,10 @@ async def on_message(message):
 # simple hello if member is nice
 @bot.command(name="hello", brief="- przywitanie")
 async def hello(ctx):
-    if ctx.author.id == 697503922201296956 and db["forgave"] == False:
+    async with aiosqlite.connect('malpkabot.db') as conn:
+        async with conn.cursor() as cursor:
+            forgave = await select_value(cursor, 'forgave')
+    if ctx.author.id == 697503922201296956 and not forgave:
         await ctx.channel.send("BYE!")
     else:
         await ctx.channel.send("HI!")
@@ -549,7 +550,10 @@ async def ping(ctx):
 # answer kc <3 if member is nice
 @bot.command(name="kc", brief="- kc <3")
 async def kc(ctx):
-    if ctx.author.id == 697503922201296956 and db["forgave"] == False:
+    async with aiosqlite.connect('malpkabot.db') as conn:
+        async with conn.cursor() as cursor:
+            forgave = await select_value(cursor, 'forgave')
+    if ctx.author.id == 697503922201296956 and not forgave:
         await ctx.channel.send(f"ja ciebie nie {ctx.author.mention}")
     else:
         await ctx.channel.send(f"kc {ctx.author.mention} <3")
@@ -568,11 +572,15 @@ async def thanos(ctx):
 # if member is not nice, but asks for forgiveness, forgive them
 @bot.command(name="przepraszam", brief="- przeproś bota")
 async def forgive(ctx):
-    if ctx.author.id == 697503922201296956 and db["forgave"] == False:
-        db["forgave"] = True
-        await ctx.channel.send("Wybaczam ci")
-    else:
-        await ctx.channel.send("Tobie zawsze wybaczę <3")
+    async with aiosqlite.connect('malpkabot.db') as conn:
+        async with conn.cursor() as cursor:
+            forgave = await select_value(cursor, 'forgave')
+            if ctx.author.id == 697503922201296956 and forgave == False:
+                await update_value('forgave', forgave, True)
+                await conn.commit()
+                await ctx.channel.send("Wybaczam ci")
+            else:
+                await ctx.channel.send("Tobie zawsze wybaczę <3")
 
 
 # send a random user created quote
@@ -584,12 +592,16 @@ async def wisdom(ctx):
 # if bot is sad, say why
 @bot.command(name="czemu", brief="- spytaj się bota, czemu jest smutny")
 async def sad_bot(ctx):
-    if ctx.author.id == 697503922201296956 and db["forgave"] == False:
-        await ctx.channel.send("PRZEZ CIEBIE!")
-    elif db["forgave"] == False:
-        await ctx.channel.send("Bo Kinia jest niemiła :cry:")
-    else:
-        await ctx.channel.send("Nie jestem :)")
+    async with aiosqlite.connect('malpkabot.db') as conn:
+        async with conn.cursor() as cursor:
+            forgave = await select_value(cursor, 'forgave')
+            if forgave:
+                await ctx.channel.send("Nie jestem :)")
+                return
+            if ctx.author.id == 697503922201296956:
+                await ctx.channel.send("PRZEZ CIEBIE!")
+            else:
+                await ctx.channel.send("Bo Kinia jest niemiła :cry:")
 
 
 # send a couple inspirational quotes
@@ -623,15 +635,21 @@ async def Scranton(ctx):
     "Aby spingować kogoś wpisz \"<@ID>\" (zamieniając \"ID\" na ID użytkownika)"
 )
 async def invited_by_who(ctx, mention):
-    # check for permissions
-    if not ctx.message.author.guild_permissions.administrator and ctx.message.author.id != 336475402535174154 and ctx.message.author.id != 724338784639910028:
+    if not ctx.message.author.guild_permissions.administrator and ctx.message.author.id != 336475402535174154:
         await ctx.channel.send("Nie masz wystarczających permisji")
         return
 
-    value = db["invites"]
-    # if the guild was never checked, make an empty dict
-    if str(ctx.message.guild.id) not in value.keys():
-        value[str(ctx.message.guild.id)] = dict()
+    async with aiosqlite.connect('malpkabot.db') as conn:
+        async with conn.cursor() as cursor:
+            await cursor.execute("BEGIN TRANSACTION")
+            invites = select_value(cursor, 'invites')
+            str_server_id = str(ctx.message.guild.id)
+
+            # if the guild was never checked, make an empty dict
+            if str_server_id not in invites:
+                invites[str_server_id] = dict()
+                await update_value(cursor, 'invites', invites)
+            await conn.commit()
 
     # fetch the user named in the command
     try:
@@ -640,7 +658,7 @@ async def invited_by_who(ctx, mention):
         user_id = str(mention)
     print(user_id)
     try:
-        user_invite = value[str(ctx.message.guild.id)][user_id]
+        user_invite = invites[str_server_id][user_id]
     except KeyError:
         await ctx.channel.send("Nie znaleziono danych dla tego użytkownika")
         print(KeyError)
@@ -664,56 +682,60 @@ async def invited_by_who(ctx, mention):
     "`@ activity <tryb> [kanał]`\nwszystkie tryby -> all, channel, blacklist, whitelist, reset\ndla \"channel\" wpisujesz ping kanału na końcu"
 )
 async def activity(ctx, mode, channel=None):
-    # check for permission
-    if not ctx.message.author.guild_permissions.administrator and ctx.message.author.id != 336475402535174154 and ctx.message.author.id != 724338784639910028:
+    if not ctx.message.author.guild_permissions.administrator and ctx.message.author.id != 336475402535174154:
         await ctx.channel.send("Nie masz wystarczających permisji")
         return
 
-    blacklist = db["activity_blacklist"]
+    if mode not in ("all", "channel", "reset", "blacklist", "whitelist"):
+        await ctx.channel.send("Nieznana funkcja komendy `@ activity`")
+        return
 
-    if mode == "all" or mode == "channel":
+    if mode in ("all", "channel"):
         await send_activity_chart(ctx, mode)
-
-    elif mode == "blacklist":
-        channel = ctx.message.channel_mentions[0].id
-        if str(channel) not in blacklist[str(ctx.guild.id)]:
-            blacklist[str(ctx.guild.id)].append(str(channel))
-            await ctx.channel.send(
-                f"Dodano kanał {ctx.guild.get_channel(channel).mention} do blacklisty"
-            )
-        else:
-            await ctx.channel.send(
-                f"Kanał {ctx.guild.get_channel(channel).mention} był już na blackliście"
-            )
-
-    elif mode == "whitelist":
-        channel = ctx.message.channel_mentions[0].id
-        if str(channel) in blacklist[str(ctx.guild.id)]:
-            blacklist[str(ctx.guild.id)].remove(str(channel))
-            await ctx.channel.send(
-                f"Usunięto kanał {ctx.guild.get_channel(channel).mention} z blacklisty"
-            )
-        else:
-            await ctx.channel.send(
-                f"Nie było kanału {ctx.guild.get_channel(channel).mention} na blackliście"
-            )
-
-    elif mode == "reset":
+        return
+    
+    if mode == "reset":
         if ctx.message.author.id != 336475402535174154:
             await ctx.channel.send("Nie masz wystarczających permisji")
             return
-        value = db["activity"]
-        value[str(ctx.guild.id)] = dict()
-        db["activity"] = value
+        async with aiosqlite.connect('malpkabot.db') as conn:
+            async with conn.cursor() as cursor:
+                await cursor.execute("BEGIN TRANSACTION")
+                channel_activity = await select_value(cursor, 'channel_activity')
+                channel_activity[str_server_id] = dict()
+                await update_value(cursor, 'channel_activity', channel_activity)
+                await conn.commit()
         print(f"reset activity for guild {ctx.guild.name}")
-        await ctx.channel.send(
-            "Usunięto dane poprzedniej aktywności! (channel, nie all)")
+        await ctx.channel.send("Usunięto dane poprzedniej aktywności! (channel, nie all)")
+        return
 
-    else:
-        await ctx.channel.send("Nieznana funkcja komendy `@ activity`")
+    async with aiosqlite.connect('malpkabot.db') as conn:
+        async with conn.cursor() as cursor:
+            str_server_id = str(ctx.guild.id)
+            await cursor.execute("BEGIN TRANSACTION")
+            blacklist = await select_value(cursor, 'activity_blacklist')
 
-    db["activity_blacklist"] = blacklist
+            if mode == "blacklist":
+                channel = ctx.message.channel_mentions[0].id
+                if str(channel) not in blacklist[str_server_id]:
+                    blacklist[str_server_id].append(str(channel))
+                    await update_value(cursor, 'activity_blacklist', blacklist)
+                    await ctx.channel.send(f"Dodano kanał {ctx.guild.get_channel(channel).mention} do blacklisty")
+                else:
+                    await ctx.channel.send(f"Kanał {ctx.guild.get_channel(channel).mention} był już na blackliście")
+                await conn.commit()
+                return
 
+            if mode == "whitelist":
+                channel = ctx.message.channel_mentions[0].id
+                if str(channel) in blacklist[str_server_id]:
+                    blacklist[str_server_id].remove(str(channel))
+                    await update_value(cursor, 'activity_blacklist', blacklist)
+                    await ctx.channel.send(f"Usunięto kanał {ctx.guild.get_channel(channel).mention} z blacklisty")
+                else:
+                    await ctx.channel.send(f"Nie było kanału {ctx.guild.get_channel(channel).mention} na blackliście")
+                await conn.commit()
+                return
 
 # reset all activity score from current guild
 @bot.command(name="reset", brief="- reset activity data", hidden=True)
@@ -722,15 +744,20 @@ async def reset(ctx):
         await ctx.channel.send("Nie masz wystarczających permisji")
         return
 
-    del db[str(ctx.guild.id)]
+    async with aiosqlite.connect('malpkabot.db') as conn:
+        async with conn.cursor() as cursor:
+            await cursor.execute("BEGIN TRANSACTION")
+            user_activity = await select_value(cursor, 'user_activity')
+            del user_activity[str(ctx.guild.id)]
+            await update_value(cursor, 'user_activity', user_activity)
+            await conn.commit()
     print(f"reset activity for server {ctx.guild.name}")
-    await ctx.channel.send(
-        "Usunięto dane poprzedniej aktywności! (all, nie channel)")
+    await ctx.channel.send("Usunięto dane poprzedniej aktywności! (all, nie channel)")
 
 
 @bot.command(name="say", brief="- powiedz coś jako bot")
 async def say(ctx):
-    if ctx.message.author.id != 336475402535174154 and ctx.message.author.id != 724338784639910028:
+    if ctx.message.author.id != 336475402535174154:
         await ctx.channel.send("Udajesz?")
         return
 
@@ -760,22 +787,30 @@ async def debug(ctx, db_key):
         await ctx.channel.send("Nie masz wystarczających permisji")
         return
 
-    print(db[db_key])
+    async with aiosqlite.connect('malpkabot.db') as conn:
+        async with conn.cursor() as cursor:
+            value = await select_value(cursor, db_key)
+            print(f"{db_key} – {value}")
 
 
-@bot.command(name="invites_channel",
-             brief="- ustaw kanał do pokazywania powiadomień o zaproszeniach")
+@bot.command(
+    name="invites_channel",
+    brief="- ustaw kanał do pokazywania powiadomień o zaproszeniach"
+)
 async def invites_channel(ctx, channel=None):
-    # check for permission
-    if not ctx.message.author.guild_permissions.administrator and ctx.message.author.id != 336475402535174154 and ctx.message.author.id != 724338784639910028:
+    if not ctx.message.author.guild_permissions.administrator and ctx.message.author.id != 336475402535174154:
         await ctx.channel.send("Nie masz wystarczających permisji")
         return
 
     # set the invites channel for the appropriate guild
     channel = ctx.message.channel_mentions[0]
-    inv_channel = db['inv_channel']
-    inv_channel[str(ctx.guild.id)] = int(channel.id)
-    db['inv_channel'] = inv_channel
+    async with aiosqlite.connect('malpkabot.db') as conn:
+        async with conn.cursor() as cursor:
+            await cursor.execute("BEGIN TRANSACTION")
+            inv_channel = select_value(cursor, 'inv_channel')
+            inv_channel[str(ctx.guild.id)] = int(channel.id)
+            await update_value(cursor, 'inv_channel', inv_channel)
+            await conn.commit()
 
     await ctx.channel.send(
         f"Ustawiono kanał na zaproszenia, na {channel.mention}")
@@ -788,21 +823,24 @@ async def sum_invites(ctx):
         await ctx.channel.send("Nie masz wystarczających permisji")
         return
 
-    inviter_uses = db['inviter_uses']
+    async with aiosqlite.connect('malpkabot.db') as conn:
+        async with conn.cursor() as cursor:
+            await cursor.execute("BEGIN TRANSACTION")
+            inviter_uses = await select_value(cursor, 'inviter_uses')
+            temp_invites = dict()
 
-    temp_invites = dict()
+            for guild in bot.guilds:
+                temp_invites[str(guild.id)] = await guild.invites()
 
-    for guild in bot.guilds:
-        temp_invites[str(guild.id)] = await guild.invites()
+                for inv in temp_invites[str(guild.id)]:
+                    if str(guild.id) not in inviter_uses:
+                        inviter_uses[str(guild.id)] = dict()
+                    if str(inv.inviter.id) not in inviter_uses[str(guild.id)]:
+                        inviter_uses[str(guild.id)][str(inv.inviter.id)] = 0
+                    inviter_uses[str(guild.id)][str(inv.inviter.id)] += inv.uses
 
-        for inv in temp_invites[str(guild.id)]:
-            if str(guild.id) not in inviter_uses:
-                inviter_uses[str(guild.id)] = dict()
-            if str(inv.inviter.id) not in inviter_uses[str(guild.id)]:
-                inviter_uses[str(guild.id)][str(inv.inviter.id)] = 0
-            inviter_uses[str(guild.id)][str(inv.inviter.id)] += inv.uses
-
-    db['inviter_uses'] = inviter_uses
+            await update_value(cursor, 'inviter_uses', inviter_uses)
+            await conn.commit()
     await ctx.channel.send("Done")
 
 
@@ -852,5 +890,4 @@ async def leave_voice_channel(ctx):
 
 # ------------------------------- #
 
-keep_alive()
 bot.run(DISCORD_TOKEN)

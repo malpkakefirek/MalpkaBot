@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "MalpkaBot"
-version = "0.1.0"
+version = "0.2.0"
 description = ""
 authors = ["Malpkakefirek"]
 
@@ -9,9 +9,6 @@ python = "^3.8"
 flask = "^2.0.0"
 python-dotenv = "^0.15.0"
 chart = "^0.2.3"
-replit = {git = "https://github.com/noneofyourbusiness1415252/replit-py"}
-backoff = "^1.10.0"
-PyNaCl = "^1.4.0"
 py-cord = "^2.3.2"
 
 [tool.poetry.dev-dependencies]
