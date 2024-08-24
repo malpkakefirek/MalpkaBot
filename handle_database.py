@@ -1,10 +1,11 @@
-import aiosqlite
 import json
+
 
 async def select_value(cursor, key):
     await cursor.execute("SELECT value FROM malpkabot WHERE key = ?", (key, ))
     row = await cursor.fetchone()
     return json.loads(str(row[0]))
+
 
 async def update_value(cursor, key, value):
     value = json.dumps(value)
