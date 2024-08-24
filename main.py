@@ -6,7 +6,7 @@ import json
 import random
 import aiosqlite
 from dotenv import load_dotenv
-from asyncio import sleep, run
+from asyncio import sleep   # , run
 from handle_database import select_value, update_value
 from initialize_database import initialize_database
 
@@ -27,6 +27,7 @@ bot = commands.Bot(command_prefix="@ ", intents=intents)
 invitations = dict()
 
 initialize_database()
+
 
 @bot.event
 async def on_ready():
@@ -372,7 +373,7 @@ async def on_member_update(before, after):
     if after.id == 833425660533014528 and after.status == discord.Status.offline and before.status != discord.Status.offline:
         await bot.get_user(336475402535174154).send("Mech bot is offline!")
 
-    if after.bot == True:
+    if after.bot is True:
         return
 
     # remove banned characters from nick
@@ -409,7 +410,7 @@ async def on_member_update(before, after):
 async def on_message(message):
 
     # do nothing if it's a bot
-    if message.author.bot == True:
+    if message.author.bot is True:
         return
 
     if message.guild:
@@ -575,7 +576,7 @@ async def forgive(ctx):
     async with aiosqlite.connect('malpkabot.db') as conn:
         async with conn.cursor() as cursor:
             forgave = await select_value(cursor, 'forgave')
-            if ctx.author.id == 697503922201296956 and forgave == False:
+            if ctx.author.id == 697503922201296956 and forgave is False:
                 await update_value('forgave', forgave, True)
                 await conn.commit()
                 await ctx.channel.send("Wybaczam ci")
@@ -631,8 +632,7 @@ async def Scranton(ctx):
 @bot.command(
     name="invites",
     brief="- sprawdź kto zaprosił daną osobę",
-    description=
-    "Aby spingować kogoś wpisz \"<@ID>\" (zamieniając \"ID\" na ID użytkownika)"
+    description="Aby spingować kogoś wpisz \"<@ID>\" (zamieniając \"ID\" na ID użytkownika)"
 )
 async def invited_by_who(ctx, mention):
     if not ctx.message.author.guild_permissions.administrator and ctx.message.author.id != 336475402535174154:
@@ -642,7 +642,7 @@ async def invited_by_who(ctx, mention):
     async with aiosqlite.connect('malpkabot.db') as conn:
         async with conn.cursor() as cursor:
             await cursor.execute("BEGIN TRANSACTION")
-            invites = select_value(cursor, 'invites')
+            invites = await select_value(cursor, 'invites')
             str_server_id = str(ctx.message.guild.id)
 
             # if the guild was never checked, make an empty dict
@@ -654,7 +654,7 @@ async def invited_by_who(ctx, mention):
     # fetch the user named in the command
     try:
         user_id = str(ctx.message.mentions[0].id)
-    except:
+    except Exception:
         user_id = str(mention)
     print(user_id)
     try:
@@ -668,7 +668,7 @@ async def invited_by_who(ctx, mention):
         await ctx.channel.send(
             f"`{ctx.message.mentions[0].name}` został zaproszony zaproszeniem `{user_invite[0]}` przez użytkownika `{user_invite[1]}`"
         )
-    except:
+    except Exception:
         await ctx.channel.send(
             f"`{user_id}` został zaproszony zaproszeniem `{user_invite[0]}` przez użytkownika `{user_invite[1]}`"
         )
@@ -678,8 +678,7 @@ async def invited_by_who(ctx, mention):
 @bot.command(
     name="activity",
     brief="- sprawdź aktywność czatowników",
-    description=
-    "`@ activity <tryb> [kanał]`\nwszystkie tryby -> all, channel, blacklist, whitelist, reset\ndla \"channel\" wpisujesz ping kanału na końcu"
+    description="`@ activity <tryb> [kanał]`\nwszystkie tryby -> all, channel, blacklist, whitelist, reset\ndla \"channel\" wpisujesz ping kanału na końcu"
 )
 async def activity(ctx, mode, channel=None):
     if not ctx.message.author.guild_permissions.administrator and ctx.message.author.id != 336475402535174154:
@@ -737,6 +736,7 @@ async def activity(ctx, mode, channel=None):
                 await conn.commit()
                 return
 
+
 # reset all activity score from current guild
 @bot.command(name="reset", brief="- reset activity data", hidden=True)
 async def reset(ctx):
@@ -770,7 +770,7 @@ async def say(ctx):
             await ctx.message.channel.trigger_typing()
             sleep(1)
             i += 1
-    except:
+    except Exception:
         pass
     await ctx.message.channel.send(says)
 
@@ -807,7 +807,7 @@ async def invites_channel(ctx, channel=None):
     async with aiosqlite.connect('malpkabot.db') as conn:
         async with conn.cursor() as cursor:
             await cursor.execute("BEGIN TRANSACTION")
-            inv_channel = select_value(cursor, 'inv_channel')
+            inv_channel = await select_value(cursor, 'inv_channel')
             inv_channel[str(ctx.guild.id)] = int(channel.id)
             await update_value(cursor, 'inv_channel', inv_channel)
             await conn.commit()
