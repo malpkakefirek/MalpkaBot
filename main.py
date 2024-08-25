@@ -483,7 +483,7 @@ async def on_message(message):
                         print(
                             f"Added user <@{user_id}> ({message.author.name}) to {message.guild.name}'s database"
                         )
-                
+
                 await update_value(cursor, 'user_activity', user_activity)
                 await conn.commit()
 
@@ -692,7 +692,7 @@ async def activity(ctx, mode, channel=None):
     if mode in ("all", "channel"):
         await send_activity_chart(ctx, mode)
         return
-    
+
     if mode == "reset":
         if ctx.message.author.id != 336475402535174154:
             await ctx.channel.send("Nie masz wystarczających permisji")

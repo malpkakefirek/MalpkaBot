@@ -2,6 +2,7 @@ import os
 import sqlite3
 import json
 
+
 def initialize_database():
     database_structure = {
         'inv_channel': dict,
@@ -44,12 +45,11 @@ def initialize_database():
     except Exception as e:
         print(str(e))
 
-
     for key, value in database_structure.items():
         cursor.execute("SELECT * FROM malpkabot WHERE key = ?", (key, ))
         value = cursor.fetchone()
         if value is None:
-            query = f"INSERT INTO malpkabot (key, value) VALUES (?, ?)"
+            query = "INSERT INTO malpkabot (key, value) VALUES (?, ?)"
             cursor.execute(query, (key, type_translation[value]))
             conn.commit()
 
