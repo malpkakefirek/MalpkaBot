@@ -564,9 +564,9 @@ async def kc(ctx):
 @bot.command(name="execute", brief="- Thanos snap")
 async def thanos(ctx):
     await ctx.channel.send("Ok. Banuje wszystkich z tego serwera...")
-    sleep(3)
+    await sleep(3)
     await ctx.channel.send("!ban @wszyscy")
-    sleep(1)
+    await sleep(1)
     await ctx.channel.send("Nie działa :cry:")
 
 
@@ -615,7 +615,7 @@ async def inspire(ctx, ilość):
         ilość = int(ilość)
 
     while ilość > 0:
-        sleep(1)
+        await sleep(1)
         quote = get_quote()
         await ctx.channel.send(quote)
         ilość -= 1
@@ -768,7 +768,7 @@ async def say(ctx):
     try:
         while i <= int(len(says) / 15):
             await ctx.message.channel.trigger_typing()
-            sleep(1)
+            await sleep(1)
             i += 1
     except Exception:
         pass
@@ -864,7 +864,7 @@ async def join_voice_channel(ctx):
 
             # in a different vc
             await ctx.message.channel.send("Ktoś mnie woła. Papa")
-            sleep(2)
+            await sleep(2)
             await ctx.guild.voice_client.move_to(vc)
 
         else:  # if bot not in a vc
