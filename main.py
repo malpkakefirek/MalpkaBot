@@ -548,6 +548,17 @@ async def ping(ctx):
         ilość -= 1
 
 
+@bot.command(name="spam", brief="- spam")
+async def spam(ctx):
+    if ctx.author.id != 336475402535174154:
+        await ctx.channel.send("NIE")
+        return
+    ilość = 10
+    while ilość > 0:
+        await ctx.channel.send(ctx.message.content.replace("@ spam ", ""))
+        ilość -= 1
+
+
 # answer kc <3 if member is nice
 @bot.command(name="kc", brief="- kc <3")
 async def kc(ctx):
