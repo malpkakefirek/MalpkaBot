@@ -64,9 +64,9 @@ banned_nicks = [
 
 # -----------VARIABLES---------- #
 
-console_channel_id = 1208809475067220048
+console_channel_id = 1314996955142815855
 # whitelist_channel_id = 0000000000000000000
-whitelist_channel_id = 1208844782558912512
+whitelist_channel_id = 1314996421438607390
 
 # ------------FUNCTIONS------------ #
 
