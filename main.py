@@ -160,7 +160,7 @@ def get_pie_chart(printable):
 async def send_activity_chart(ctx, mode):
     async with aiosqlite.connect('malpkabot.db') as conn:
         async with conn.cursor() as cursor:
-            if mode == "all":
+            if mode == "all" or mode == "summary":
                 user_activity = await select_value(cursor, 'user_activity')
                 value = user_activity[str(ctx.guild.id)]
             elif mode == "channel":
@@ -188,6 +188,10 @@ async def send_activity_chart(ctx, mode):
     printable = dict()
     # get num of all the messages
     all_msgs = sum(sorted_dict.values())
+
+    if mode == "summary":
+        await ctx.channel.send(f"Sumaryczna ilość wiadomości: **{all_msgs}**")
+        return
 
     # change all activity points to percentage (only for printing)
     n = 0
@@ -696,11 +700,11 @@ async def activity(ctx, mode, channel=None):
         await ctx.channel.send("Nie masz wystarczających permisji")
         return
 
-    if mode not in ("all", "channel", "reset", "blacklist", "whitelist"):
+    if mode not in ("all", "channel", "reset", "blacklist", "whitelist", "summary"):
         await ctx.channel.send("Nieznana funkcja komendy `@ activity`")
         return
 
-    if mode in ("all", "channel"):
+    if mode in ("all", "channel", "summary"):
         await send_activity_chart(ctx, mode)
         return
 
