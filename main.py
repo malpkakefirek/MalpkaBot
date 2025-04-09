@@ -280,7 +280,7 @@ async def on_member_join(member):
             invites_after_join = await member.guild.invites()
 
             # fetch my profile
-            malpka = await member.guild.fetch_member(336475402535174154)
+            # malpka = await member.guild.fetch_member(336475402535174154)
 
             # find the used invite
             for inv in invites_before_join:
@@ -313,11 +313,11 @@ async def on_member_join(member):
                 ")
 
                 # send me dm about the invite
-                await malpka.create_dm()
-                await malpka.dm_channel.send(f"\
-                    Old invite used for `{member.name}` with `{inv.code}` by `{inv.inviter}`. \
-                    It's their invitation number {inviter_uses_guild[str(inv.inviter.id)]}\
-                ")
+                # await malpka.create_dm()
+                # await malpka.dm_channel.send(f"\
+                #     Old invite used for `{member.name}` with `{inv.code}` by `{inv.inviter}`. \
+                #     It's their invitation number {inviter_uses_guild[str(inv.inviter.id)]}\
+                # ")
                 break
             else:
                 print("Not old")
@@ -350,11 +350,11 @@ async def on_member_join(member):
                     )
 
                     # send me dm about the invite
-                    await malpka.create_dm()
-                    await malpka.dm_channel.send(
-                        f"New invite used for `{member.name}` with `{inv.code}` by `{inv.inviter}`. It's their invitation number {inviter_uses_guild[str(inv.inviter.id)]}"
-                    )
-                    break
+                    # await malpka.create_dm()
+                    # await malpka.dm_channel.send(
+                    #     f"New invite used for `{member.name}` with `{inv.code}` by `{inv.inviter}`. It's their invitation number {inviter_uses_guild[str(inv.inviter.id)]}"
+                    # )
+                    # break
                 else:
                     print("Not new. Propably invite was single use")
 
