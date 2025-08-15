@@ -354,7 +354,7 @@ async def on_member_join(member):
                     # await malpka.dm_channel.send(
                     #     f"New invite used for `{member.name}` with `{inv.code}` by `{inv.inviter}`. It's their invitation number {inviter_uses_guild[str(inv.inviter.id)]}"
                     # )
-                    # break
+                    break
                 else:
                     print("Not new. Propably invite was single use")
 
