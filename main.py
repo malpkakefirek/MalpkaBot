@@ -327,10 +327,10 @@ async def on_member_join(member):
 
                 # send me dm about the invite
                 # await malpka.create_dm()
-                # await malpka.dm_channel.send(f"\
-                #     Old invite used for `{member.name}` with `{inv.code}` by `{inv.inviter}`. \
-                #     It's their invitation number {inviter_uses_guild[str(inv.inviter.id)]}\
-                # ")
+                # await malpka.dm_channel.send((
+                #     f"Old invite used for `{member.name}` with `{inv.code}` by `{inv.inviter}`.\n"
+                #     f"It's their invitation number {inviter_uses_guild[str(inv.inviter.id)]}"
+                # ))
                 break
             else:
                 print("Not old")
@@ -447,7 +447,7 @@ async def on_message(message):
                 if server_id not in user_activity:
                     user_activity[server_id] = dict()
                     print(
-                        f"Appended an empty dictionary for {server_id}  {message.guild.name}) to the database"
+                        f"Appended an empty dictionary for {server_id} ({message.guild.name}) to the database"
                     )
 
                 # == PER CHANNEL ACTIVITY == #
@@ -469,11 +469,11 @@ async def on_message(message):
                 # add per channel channel_activity point
                 if user_id not in channel_activity[server_id][channel_id]:  # if new member
                     channel_activity[server_id][channel_id][user_id] = 1
-                    print(f"\
-                        First message for user {user_id} ({message.author.name}) \
-                        in channel \"{message.channel.name}\" \
-                        in guild \"{message.guild.name}\"\
-                    ")
+                    print((
+                        f"First message for user {user_id} ({message.author.name}) "
+                        f"in channel \"{message.channel.name}\" "
+                        f"in guild \"{message.guild.name}\""
+                    ))
                 else:
                     channel_activity[server_id][channel_id][user_id] += 1
                     print("added per channel channel_activity point")
