@@ -7,6 +7,8 @@ import random
 import aiosqlite
 from dotenv import load_dotenv
 from asyncio import sleep   # , run
+import traceback
+
 from handle_database import select_value, update_value
 from initialize_database import initialize_database
 
@@ -64,9 +66,9 @@ banned_nicks = [
 
 # -----------VARIABLES---------- #
 
-console_channel_id = 1403483533409783868
+console_channel_id = 1528544714473734246
 # whitelist_channel_id = 0000000000000000000
-whitelist_channel_id = 1403734595027075133
+whitelist_channel_id = 1528544631908728884
 
 # ------------FUNCTIONS------------ #
 
@@ -80,13 +82,24 @@ def get_quote():
 
 
 # fetch quote from "The Office"
-def the_office():
-    response = requests.get("https://officeapi.dev/api/quotes/random")
+def the_office_embed(id=None):
+    if id is None:
+        response = requests.get("https://officeapi.akashrajpurohit.com/quote/random")
+    else:
+        response = requests.get(f"https://officeapi.akashrajpurohit.com/quote/{id}")
     json_data = json.loads(response.text)
-    quote = "\"" + json_data["data"]["content"] + "\" - " + json_data["data"][
-        "character"]["firstname"] + " " + json_data["data"]["character"][
-            "lastname"]
-    return quote
+
+    emb = discord.Embed(
+        title=f"The Office Quote #{json_data['id']}",
+        description=json_data['quote'],
+        color=0xFF5733
+    )
+    emb.set_author(
+        name=json_data['character'],
+        icon_url=json_data['character_avatar_url']
+    )
+
+    return emb
 
 
 # fetch invite by invite's code
@@ -637,10 +650,14 @@ async def inspire(ctx, ilość):
 
 
 # send "The Office" quote
-@bot.command(name="Scranton", brief="- losowy cytat z the office")
-async def Scranton(ctx):
-    quote = the_office()
-    await ctx.channel.send(quote)
+@bot.command(name="Scranton", brief="- losowy cytat z the office", aliases=["office"])
+async def Scranton(ctx, id=None):
+    try:
+        quote_embed = the_office_embed(id)
+        await ctx.channel.send(embed=quote_embed)
+    except Exception:
+        await ctx.channel.send("Nie udało się pobrać cytatu z The Office :cry:")
+        traceback.print_exc()
 
 
 # check by who the member is invited
