@@ -320,10 +320,10 @@ async def on_member_join(member):
                 inviter_uses_guild[str(inv.inviter.id)] += 1
 
                 # send message on the inv channel about invite
-                await inv_channel.send(f"\
-                    Użytkownik {member.mention} został zaproszony kodem `{inv.code}` przez użytkownika `{inv.inviter}`. \
-                    Użytkownik `{inv.inviter.name}` zaprosił już `{inviter_uses_guild[str(inv.inviter.id)]}` osób\
-                ")
+                await inv_channel.send((
+                    f"Użytkownik {member.mention} został zaproszony kodem `{inv.code}` przez użytkownika `{inv.inviter}`.\n"
+                    f"Użytkownik `{inv.inviter.name}` zaprosił już `{inviter_uses_guild[str(inv.inviter.id)]}` osób"
+                ))
 
                 # send me dm about the invite
                 # await malpka.create_dm()
@@ -358,9 +358,10 @@ async def on_member_join(member):
                     inviter_uses_guild[str(inv.inviter.id)] += 1
 
                     # send message on the inv channel about invite
-                    await inv_channel.send(
-                        f"Użytkownik {member.mention} został zaproszony kodem `{inv.code}` przez użytkownika `{inv.inviter}`. Użytkownik `{inv.inviter.name}` zaprosił już `{inviter_uses_guild[str(inv.inviter.id)]}` osób"
-                    )
+                    await inv_channel.send((
+                        f"Użytkownik {member.mention} został zaproszony kodem `{inv.code}` przez użytkownika `{inv.inviter}`.\n"
+                        f"Użytkownik `{inv.inviter.name}` zaprosił już `{inviter_uses_guild[str(inv.inviter.id)]}` osób"
+                    ))
 
                     # send me dm about the invite
                     # await malpka.create_dm()
@@ -372,10 +373,10 @@ async def on_member_join(member):
                     print("Not new. Propably invite was single use")
 
                     # send message on the inv channel about invite
-                    await inv_channel.send(f"\
-                        Użytkownik {member.mention} został zaproszony zaproszeniem jednorazowym. \
-                        Więcej info znajdziesz na \"audit log\"\
-                    ")
+                    await inv_channel.send((
+                        f"Użytkownik {member.mention} został zaproszony zaproszeniem jednorazowym.\n"
+                        "Więcej info znajdziesz w Dzienniku zdarzeń (logach) serwera"
+                    ))
 
             inviter_uses[str(member.guild.id)] = inviter_uses_guild
             await update_value(cursor, 'inviter_uses', inviter_uses)
