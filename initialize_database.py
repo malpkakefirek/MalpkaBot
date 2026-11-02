@@ -55,6 +55,6 @@ def initialize_database():
 
         cursor.execute("SELECT value FROM malpkabot WHERE key = ?", (key, ))
         value = cursor.fetchone()
-        print(f"{key} — {value[0]}\n")
+        print(f"DB Key '{key}'\n")
 
     print("\n==============================\nCREATED ALL MISSING DATABASES!\n==============================\n")
